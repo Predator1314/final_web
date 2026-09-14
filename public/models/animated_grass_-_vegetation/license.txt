@@ -1,0 +1,11 @@
+Model Information:
+* title:	Animated Grass - Vegetation
+* source:	https://sketchfab.com/3d-models/animated-grass-vegetation-2696dcbc6b3c40a680f13b681f7ea64c
+* author:	raguramkgr (https://sketchfab.com/ragukgr)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Animated Grass - Vegetation" (https://sketchfab.com/3d-models/animated-grass-vegetation-2696dcbc6b3c40a680f13b681f7ea64c) by raguramkgr (https://sketchfab.com/ragukgr) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
