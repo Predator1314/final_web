@@ -4,8 +4,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { Water } from 'three/addons/objects/Water.js'
-import { TextureLoader } from 'three'
+
+// 部署基路径（GitHub Pages 子路径下用 './'，本地开发是 '/'）
+const base = import.meta.env.BASE_URL
 
 // ========== 共享渲染器 ==========
 const app = document.getElementById('app')
@@ -13,7 +14,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = 0.55
+renderer.toneMappingExposure = 1.0
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 app.appendChild(renderer.domElement)
@@ -36,27 +37,26 @@ function setupReal() {
   const target = new THREE.Vector3(0, -1, -20)
 
   // ========== 光照 ==========
-  const sun = new THREE.DirectionalLight(0xffb8c8, 0.35)
+  const sun = new THREE.DirectionalLight(0xffffff, 0.9)
   sun.position.set(100, 40, -60); sun.castShadow = true
   sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.near=0.5; sun.shadow.camera.far=200
   sun.shadow.camera.left=-80; sun.shadow.camera.right=80; sun.shadow.camera.top=80; sun.shadow.camera.bottom=-80
   scene.add(sun)
-  scene.add(new THREE.AmbientLight(0xffdde8, 0.15))
-  scene.add(new THREE.HemisphereLight(0xffc0d0, 0x5a4a5a, 0.08))
+  scene.add(new THREE.AmbientLight(0xffffff, 0.4))
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8890a8, 0.25))
 
-  // ========== 天空（大气散射渐变 + FBM 云层 + 太阳，单次着色器绘制） ==========
+  // ========== 天空（真实感大气渐变 + 太阳光晕，单次着色器绘制） ==========
   const skyGeo = new THREE.SphereGeometry(200, 64, 32)
   const skySunDir = new THREE.Vector3(0, 20, -140).normalize()
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      uZenith: { value: new THREE.Color(0x2a63b0) },   // 天顶深蓝
-      uMid:    { value: new THREE.Color(0x86aede) },   // 中段浅蓝
-      uHorizon:{ value: new THREE.Color(0xf2c9a0) },   // 地平线暖橙
+      uZenith: { value: new THREE.Color(0x1e5aa8) },   // 天顶深蓝
+      uMid:    { value: new THREE.Color(0x7fb2e0) },   // 中段浅蓝
+      uHorizon:{ value: new THREE.Color(0xd4e3f2) },   // 地平线浅蓝白（自然）
       uSunDir: { value: skySunDir },
       uOff:    { value: 26.0 },
-      uTime:   { value: 0.0 },
     },
     vertexShader: `
       varying vec3 vW;
@@ -68,58 +68,23 @@ function setupReal() {
     `,
     fragmentShader: `
       uniform vec3 uZenith, uMid, uHorizon, uSunDir;
-      uniform float uOff, uTime;
+      uniform float uOff;
       varying vec3 vW;
-
-      // --- 值噪声 / FBM（用于云层） ---
-      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
-      float noise(vec2 p){
-        vec2 i = floor(p), f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-                   mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-      }
-      float fbm(vec2 p){
-        float v = 0.0, a = 0.5;
-        mat2 r = mat2(0.8, 0.6, -0.6, 0.8);
-        for (int i = 0; i < 5; i++){
-          v += a * noise(p);
-          p = r * p * 2.03;
-          a *= 0.5;
-        }
-        return v;
-      }
-
       void main(){
         vec3 w = normalize(vW + vec3(0.0, uOff, 0.0));
         float h = clamp(w.y, 0.0, 1.0);
-
-        // 大气散射式三段渐变：地平线暖橙 -> 中段浅蓝 -> 天顶深蓝
-        float t = pow(h, 0.85);
-        vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.28, t));
-        col = mix(col, uZenith, smoothstep(0.28, 1.0, t));
-
-        // 地平线附近的暖色大气光晕（米氏散射）
-        col += uHorizon * pow(1.0 - h, 3.0) * 0.26;
-
-        // ===== 云层（上半天空，受太阳方向照亮的 FBM 云） =====
-        float clMask = smoothstep(0.04, 0.16, w.y) * (1.0 - smoothstep(0.35, 0.60, w.y));
-        vec2 cp = w.xz / max(w.y, 0.06) * 0.5;
-        cp.x += uTime * 0.004;
-        float cNoise = fbm(cp * 1.4);
-        float cloud = smoothstep(0.48, 0.72, cNoise) * clMask;
-        float sunAmt = clamp(dot(w, uSunDir), 0.0, 1.0);
-        vec3 cloudCol = mix(vec3(0.78, 0.80, 0.88), vec3(1.0, 0.98, 0.92), sunAmt);
-        col = mix(col, cloudCol, cloud * 0.65);
-
-        // ===== 太阳：亮核 + 内晕 + 外晕 + 米氏散射光柱 =====
+        // 大气散射式三段渐变：地平线暖白 -> 中段浅蓝 -> 天顶深蓝
+        float t = pow(h, 0.6);
+        vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.4, t));
+        col = mix(col, uZenith, smoothstep(0.4, 1.0, t));
+        // 地平线附近淡淡的暖色大气光晕
+        col += uHorizon * pow(1.0 - h, 3.0) * 0.18;
+        // 太阳：小亮核 + 柔和内晕 + 外晕
         float sun = max(dot(w, uSunDir), 0.0);
-        float disc = smoothstep(0.9990, 0.9994, sun);
-        col += vec3(1.0, 0.96, 0.86) * disc * 2.2;
-        col += vec3(1.0, 0.86, 0.62) * pow(sun, 6.0) * 0.45;
-        col += vec3(1.0, 0.72, 0.48) * pow(sun, 2.5) * 0.22;
-        col += vec3(1.0, 0.55, 0.30) * pow(sun, 1.2) * 0.10;
-
+        float disc = smoothstep(0.9992, 0.9995, sun);
+        col += vec3(1.0, 0.97, 0.90) * disc * 1.5;
+        col += vec3(1.0, 0.86, 0.62) * pow(sun, 12.0) * 0.35;
+        col += vec3(1.0, 0.75, 0.50) * pow(sun, 4.0)  * 0.16;
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -128,33 +93,93 @@ function setupReal() {
   skyMesh.frustumCulled = false
   scene.add(skyMesh)
 
-  // ========== 雪地（贴图） ==========
-  const texLoader = new TextureLoader()
+  // ========== 雪地（程序化生成：亮白雪堆起伏 + 微闪 + 法线） ==========
+  function makeSnowGround() {
+    const size = 512
+    const hash = (x, y) => { const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n) }
+    const smooth = t => t * t * (3 - 2 * t)
+    function valueNoise(x, y) {
+      const xi = Math.floor(x), yi = Math.floor(y)
+      const xf = x - xi, yf = y - yi
+      const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1)
+      const u = smooth(xf), v = smooth(yf)
+      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+    }
+    function fbm(x, y) {
+      let v = 0, amp = 0.5, fx = x, fy = y
+      for (let i = 0; i < 6; i++) { v += amp * valueNoise(fx, fy); fx *= 2.05; fy *= 2.05; amp *= 0.52 }
+      return v
+    }
+    const height = new Float32Array(size * size)
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const drift = fbm(x / size * 4, y / size * 4)
+        const grain = fbm(x / size * 22 + 37.0, y / size * 22 + 11.0)
+        height[y * size + x] = drift * 0.65 + grain * 0.35
+      }
+    }
 
-  const snowTex = texLoader.load('/models/snow_ground/textures/meshes0__0_baseColor.jpeg')
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = size
+    const ctx = canvas.getContext('2d')
+    const img = ctx.createImageData(size, size)
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = y * size + x, h = height[i]
+        const shade = 0.82 + h * 0.18
+        let r = 255 * shade, g = 255 * shade, b = 255 * shade
+        const blue = (1 - h) * 10
+        r -= blue * 0.6; g -= blue * 0.38; b += blue
+        const sp = hash(x * 7.13, y * 3.71)
+        if (sp > 0.996) r = g = b = 255
+        else if (sp > 0.99) r = g = b = 245
+        img.data[i * 4] = r; img.data[i * 4 + 1] = g; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = 255
+      }
+    }
+    ctx.putImageData(img, 0, 0)
+
+    const nCanvas = document.createElement('canvas')
+    nCanvas.width = nCanvas.height = size
+    const nCtx = nCanvas.getContext('2d')
+    const nImg = nCtx.createImageData(size, size)
+    const s = 3.0
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const i = y * size + x
+        const l = height[y * size + ((x - 1 + size) % size)]
+        const r = height[y * size + ((x + 1) % size)]
+        const t = height[((y - 1 + size) % size) * size + x]
+        const b = height[((y + 1) % size) * size + x]
+        const nx = (l - r) * s, ny = (t - b) * s, nz = 1
+        const inv = 1 / Math.sqrt(nx * nx + ny * ny + nz * nz)
+        nImg.data[i * 4] = (nx * inv * 0.5 + 0.5) * 255
+        nImg.data[i * 4 + 1] = (ny * inv * 0.5 + 0.5) * 255
+        nImg.data[i * 4 + 2] = (nz * inv * 0.5 + 0.5) * 255
+        nImg.data[i * 4 + 3] = 255
+      }
+    }
+    nCtx.putImageData(nImg, 0, 0)
+    return { color: canvas, normal: nCanvas }
+  }
+
+  const snowMaps = makeSnowGround()
+
+  const snowTex = new THREE.CanvasTexture(snowMaps.color)
   snowTex.colorSpace = THREE.SRGBColorSpace
   snowTex.wrapS = snowTex.wrapT = THREE.RepeatWrapping
   snowTex.repeat.set(18, 18)
   snowTex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
 
-  const snowNormal = texLoader.load('/models/snow_ground/textures/meshes0__0_normal.png')
+  const snowNormal = new THREE.CanvasTexture(snowMaps.normal)
   snowNormal.wrapS = snowNormal.wrapT = THREE.RepeatWrapping
   snowNormal.repeat.set(18, 18)
 
   const snowGround = new THREE.Mesh(
-    new THREE.PlaneGeometry(200,200),
-    new THREE.MeshStandardMaterial({ map: snowTex, normalMap: snowNormal, normalScale: new THREE.Vector2(0.35, 0.35), color: 0xffffff, roughness: 0.85, metalness: 0 })
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({ map: snowTex, color: 0xffffff, roughness: 0.75, metalness: 0 })
   )
-  snowGround.rotation.x = -Math.PI/2; snowGround.position.y = -2.9; snowGround.receiveShadow = true
+  snowGround.rotation.x = -Math.PI / 2; snowGround.position.y = -2.9; snowGround.receiveShadow = true
   scene.add(snowGround)
-
-  // ========== 水面 ==========
-  let waterPlane
-  const poolGeo = new THREE.PlaneGeometry(180,180,64,64)
-  let wn = null
-  try { wn = texLoader.load('/textures/waternormals.jpg'); wn.wrapS=wn.wrapT=THREE.RepeatWrapping } catch(e){}
-  waterPlane = new Water(poolGeo, { textureWidth:512,textureHeight:512,waterNormals:wn,alpha:0.65,sunDirection:sun.position.clone().normalize(),sunColor:0xffeedd,waterColor:0x5588aa,distortionScale:2.0,fog:false })
-  waterPlane.rotation.x=-Math.PI/2; waterPlane.position.y=-2.88; scene.add(waterPlane)
 
   // 雪人站立位置（树会避开这里）
   const SNOWMAN_SPOTS = [
@@ -163,6 +188,7 @@ function setupReal() {
   ]
 
   // ========== 櫻花樹 ==========
+  const treeGroup = []  // 记录树，供点击交互
   function loadTrees() {
     const loader = new GLTFLoader()
     for(let i=0;i<25;i++){
@@ -171,19 +197,19 @@ function setupReal() {
         a=Math.random()*Math.PI*2; d=5+Math.random()*35
         x=Math.cos(a)*d; z=Math.sin(a)*d
       } while (SNOWMAN_SPOTS.some(s => (x-s.x)**2 + (z-s.z)**2 < 9*9))
-      loader.load('/models/laying_under_a_tree_with_pink_leaves_and_wind/scene.gltf', gltf=>{
+      loader.load(base + 'models/laying_under_a_tree_with_pink_leaves_and_wind/scene.gltf', gltf=>{
         const m=gltf.scene; m.position.set(x,-3,z); m.scale.setScalar(0.5+Math.random()*2)
         m.rotation.y=Math.random()*Math.PI*2
         m.traverse(c=>{if(c.isMesh){c.castShadow=true;c.receiveShadow=true}})
-        scene.add(m)
-        if(gltf.animations&&gltf.animations.length){const mx=new THREE.AnimationMixer(m);mx.clipAction(gltf.animations[0]).play();if(!window.treeMixers)window.treeMixers=[];window.treeMixers.push(mx)}
+        scene.add(m); treeGroup.push(m)
+        if(gltf.animations&&gltf.animations.length){const mx=new THREE.AnimationMixer(m);const ta=mx.clipAction(gltf.animations[0]);ta.play();if(!window.treeMixers)window.treeMixers=[];window.treeMixers.push(mx);if(!window.treeActions)window.treeActions=[];window.treeActions.push(ta)}
       })
     }
   }
 
   // ========== 草地 ==========
   function loadGrass() {
-    new GLTFLoader().load('/models/animated_grass_-_vegetation/scene.gltf', gltf=>{
+    new GLTFLoader().load(base + 'models/animated_grass_-_vegetation/scene.gltf', gltf=>{
       const orig=gltf.scene; let n=0
       for(let i=0;i<800;i++){
         if(Math.random()>0.55)continue
@@ -202,34 +228,13 @@ function setupReal() {
   // ========== 微風 ==========
   let wind = 0
   const windDir = new THREE.Vector3(1, 0.15, 0.3).normalize()
-  function gust(){ wind = 1.0 }
-
-  // ========== 花瓣 ==========
-  const petals=[]
-  function petalGeo(){const s=new THREE.Shape();s.moveTo(0,0);s.quadraticCurveTo(.04,.04,.04,.16);s.quadraticCurveTo(.02,.24,0,.32);s.quadraticCurveTo(-.02,.28,-.06,.18);s.quadraticCurveTo(-.08,.08,0,0);const g=new THREE.ShapeGeometry(s,8);g.translate(0,-.08,0);g.scale(.9,.6,1);return g}
-  const petMat = new THREE.MeshStandardMaterial({color:0xffccdd,transparent:true,opacity:.8,side:THREE.DoubleSide,roughness:.3})
-  function initPetals(){
-    for(let i=0;i<150;i++){
-      const p=new THREE.Mesh(petalGeo(),petMat)
-      p.position.set((Math.random()-.5)*60,5+Math.random()*30,(Math.random()-.5)*60)
-      p.rotation.set(-Math.PI/2+(Math.random()-.5)*.2,Math.random()*Math.PI*2,Math.random()*Math.PI)
-      p.scale.setScalar(.08+Math.random()*.15)
-      p.userData={spd:.01+Math.random()*.03,dx:(Math.random()-.5)*.03,dz:(Math.random()-.5)*.03}
-      scene.add(p); petals.push(p)
-    }
-  }
-  function updatePetals(dt){
-    petals.forEach(p=>{
-      p.position.y-=p.userData.spd; p.position.x+=p.userData.dx+wind*0.1*windDir.x; p.position.z+=p.userData.dz+wind*0.1*windDir.z
-      p.rotation.y+=.01+wind*.03; p.rotation.x+=.005+wind*.015
-      if(p.position.y<-5){p.position.y=25+Math.random()*20;p.position.x=(Math.random()-.5)*60;p.position.z=(Math.random()-.5)*60}
-    })
-  }
+  function gust(){ wind = 2.5 }
 
   // ========== 雪花（单个 Points 对象，替代 600 个独立 Mesh，避免卡顿） ==========
-  let snowTarget = 600
+  let snowTarget = 0
+  let weatherOn = false
   let snowTime = 0
-  const SNOW_MAX = 1200
+  const SNOW_MAX = 2000
   const snowGeo = new THREE.BufferGeometry()
   const snowPos = new Float32Array(SNOW_MAX * 3)
   const snowSpd = new Float32Array(SNOW_MAX)
@@ -237,7 +242,7 @@ function setupReal() {
     snowPos[i*3]   = (Math.random() - 0.5) * 140
     snowPos[i*3+1] = Math.random() * 45
     snowPos[i*3+2] = (Math.random() - 0.5) * 140
-    snowSpd[i] = 0.02 + Math.random() * 0.05
+    snowSpd[i] = 0.04 + Math.random() * 0.08
   }
   snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3))
 
@@ -345,8 +350,7 @@ function setupReal() {
     for(const sm of snowmen){
       if(raycaster.intersectObject(sm,true).length>0){
         e.stopImmediatePropagation()
-        snowTarget = snowTarget === 600 ? 1200 : 600
-        snowmen.forEach(s=>s.userData.target=s.userData.base*1.06)
+        toggleWeather()
         return
       }
     }
@@ -381,15 +385,21 @@ function setupReal() {
   function updateClouds(t){cloudList.forEach(c=>{c.position.x=c.userData.bx+Math.sin(t*.015*c.userData.sp)*c.userData.rn})}
 
   // ========== 初始化 ==========
-  loadTrees(); loadGrass(); initPetals(); createSnowmen(); createClouds()
+  loadTrees(); loadGrass(); createSnowmen(); createClouds()
 
   function update(dt, frame){
-    skyMat.uniforms.uTime.value += dt
-    updatePetals(dt); updateSnow(dt); updateClouds(frame)
-    wind = Math.max(0, wind - dt*0.6)
+    updateSnow(dt); updateClouds(frame)
+    if(weatherOn){ wind = 2.5 } else { wind = Math.max(0, wind - dt*0.6) }
     if(window.treeMixers)window.treeMixers.forEach(m=>m.update(dt))
     if(window.grassMixers)window.grassMixers.forEach(m=>m.update(dt))
-    if(waterPlane&&waterPlane.material&&waterPlane.material.uniforms&&waterPlane.material.uniforms.time)waterPlane.material.uniforms.time.value+=dt
+    // 树随风摆动：没风时完全静止，风越大摆得越明显
+    if(window.treeActions){const tw=Math.min(wind,1);window.treeActions.forEach(a=>a.setEffectiveWeight(a.getEffectiveWeight()+(tw-a.getEffectiveWeight())*0.1))}
+    // 整棵树轻微摆动（微动）
+    treeGroup.forEach((t, i) => {
+      const s = wind * 0.04
+      t.rotation.z = Math.sin(frame * 0.03 + i * 1.3) * s
+      t.rotation.x = Math.cos(frame * 0.02 + i * 0.9) * s * 0.5
+    })
 
     // 雪人彈跳動畫
     for(let i=0;i<snowmen.length;i++){
@@ -403,7 +413,20 @@ function setupReal() {
   function render(){ composer.render() }
   function resize(){ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); composer.setSize(innerWidth, innerHeight) }
 
-  return { camera, target, update, render, resize }
+  // 交互按钮对应的操作
+  function toggleWeather(){
+    weatherOn = !weatherOn
+    if(weatherOn){
+      snowTarget = 900
+      wind = 2.5
+    } else {
+      snowTarget = 0
+      wind = 0
+    }
+    snowmen.forEach(s=>s.userData.target=s.userData.base*(weatherOn?1.06:1))
+  }
+
+  return { camera, target, update, render, resize, toggleWeather, gust }
 }
 
 // ========== 卡通版场景 ==========
@@ -1076,17 +1099,66 @@ toggleBtn.style.boxShadow = '0 4px 14px rgba(0,0,0,0.25)'
 toggleBtn.style.zIndex = '9999'
 document.body.appendChild(toggleBtn)
 
+// ========== 交互按钮（右上角） ==========
+function makeActionBtn(text, bg, top){
+  const b = document.createElement('button')
+  b.textContent = text
+  b.style.position = 'fixed'
+  b.style.right = '30px'
+  b.style.top = top
+  b.style.padding = '12px 20px'
+  b.style.borderRadius = '22px'
+  b.style.border = 'none'
+  b.style.background = bg
+  b.style.color = 'white'
+  b.style.fontSize = '16px'
+  b.style.cursor = 'pointer'
+  b.style.boxShadow = '0 4px 14px rgba(0,0,0,0.25)'
+  b.style.zIndex = '9999'
+  document.body.appendChild(b)
+  return b
+}
+const weatherBtn = makeActionBtn('🌨️ 天气开/关', '#7fb2e0', '30px')
+const realBtns = [weatherBtn]
+
+weatherBtn.addEventListener('click', ()=>{ if(mode==='real') real.toggleWeather() })
+
+// 交互提示（底部居中，9 秒后淡出）
+const hintEl = document.createElement('div')
+hintEl.textContent = '🌨️ 点「天气」按钮：开启/关闭风雪（点雪人也可切换）'
+hintEl.style.position = 'fixed'
+hintEl.style.left = '50%'
+hintEl.style.bottom = '28px'
+hintEl.style.transform = 'translateX(-50%)'
+hintEl.style.padding = '10px 20px'
+hintEl.style.borderRadius = '24px'
+hintEl.style.background = 'rgba(0,0,0,0.45)'
+hintEl.style.color = '#fff'
+hintEl.style.fontSize = '14px'
+hintEl.style.pointerEvents = 'none'
+hintEl.style.zIndex = '9999'
+hintEl.style.whiteSpace = 'nowrap'
+hintEl.style.backdropFilter = 'blur(4px)'
+document.body.appendChild(hintEl)
+setTimeout(() => {
+  hintEl.style.transition = 'opacity 1.2s'
+  hintEl.style.opacity = '0'
+  setTimeout(() => hintEl.remove(), 1200)
+}, 9000)
+
 toggleBtn.addEventListener('click', () => {
   if (mode === 'real') {
     mode = 'cartoon'
     toggleBtn.textContent = '🌸 切换到现实版'
     renderer.toneMappingExposure = 1.0
     cartoon.windButton.style.display = 'block'
+    realBtns.forEach(b => b.style.display = 'none')
   } else {
     mode = 'real'
     toggleBtn.textContent = '🎨 切换到卡通版'
-    renderer.toneMappingExposure = 0.55
+    renderer.toneMappingExposure = 1.0
     cartoon.windButton.style.display = 'none'
+    realBtns.forEach(b => b.style.display = 'block')
   }
   applyControls(mode)
   state.mode = mode
