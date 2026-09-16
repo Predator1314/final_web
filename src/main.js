@@ -331,12 +331,6 @@ function setupReal() {
             c.userData.baseTreeColor = c.material.color.clone()
             c.material.color.copy(c.userData.baseTreeColor).lerp(new THREE.Color(treeTint), treeTintStrength)
           }
-          if (c.material.emissive) {
-            c.userData.baseTreeEmissive = c.material.emissive.clone()
-            c.userData.baseTreeEmissiveIntensity = c.material.emissiveIntensity || 0
-            c.material.emissive.set(0x000000)
-            c.material.emissiveIntensity = 0
-          }
         })
         scene.add(m); treeGroup.push(m)
         if(gltf.animations&&gltf.animations.length){const mx=new THREE.AnimationMixer(m);const ta=mx.clipAction(gltf.animations[0]);ta.play();if(!window.treeMixers)window.treeMixers=[];window.treeMixers.push(mx);if(!window.treeActions)window.treeActions=[];window.treeActions.push(ta)}
@@ -561,10 +555,6 @@ function setupReal() {
         if (node.isMesh && node.material && node.material.color) {
           const base = node.userData.baseTreeColor || node.material.color
           node.material.color.copy(base).lerp(c, strength)
-          if (node.material.emissive) {
-            node.material.emissive.set(0x000000)
-            node.material.emissiveIntensity = 0
-          }
         }
       })
     })
