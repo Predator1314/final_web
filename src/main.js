@@ -1000,6 +1000,41 @@ function setupCartoon() {
   glowSphere.position.copy(sunMesh.position)
   scene.add(glowSphere)
 
+  // ========== 卡通草地 ==========
+  const grassBladeGeo = new THREE.PlaneGeometry(0.13, 0.5)
+  grassBladeGeo.translate(0, 0.25, 0)  // 叶片根部在 y=0
+  const grassMatA = new THREE.MeshToonMaterial({ color: 0x7cc24a, emissive: 0x1d3d0c, emissiveIntensity: 0.12, side: THREE.DoubleSide })
+  const grassMatB = new THREE.MeshToonMaterial({ color: 0x4f9c34, emissive: 0x1d3d0c, emissiveIntensity: 0.12, side: THREE.DoubleSide })
+  function createCartoonGrass() {
+    const group = new THREE.Group()
+    const tuftCount = 70
+    for (let i = 0; i < tuftCount; i++) {
+      const tuft = new THREE.Group()
+      const blades = 4 + Math.floor(Math.random() * 4)
+      const mat = Math.random() > 0.45 ? grassMatA : grassMatB
+      for (let j = 0; j < blades; j++) {
+        const blade = new THREE.Mesh(grassBladeGeo, mat)
+        blade.rotation.y = (j / blades) * Math.PI * 2 + Math.random() * 0.5
+        blade.rotation.x = 0.22 + Math.random() * 0.3
+        blade.scale.setScalar(0.7 + Math.random() * 0.9)
+        blade.receiveShadow = true
+        tuft.add(blade)
+      }
+      let x, z
+      do {
+        x = (Math.random() - 0.5) * 21
+        z = (Math.random() - 0.5) * 21
+      } while (Math.abs(x) < 4 && Math.abs(z) < 4)  // 避开中心雪人
+      tuft.position.set(x, 0.06, z)
+      tuft.rotation.y = Math.random() * Math.PI * 2
+      tuft.scale.setScalar(0.75 + Math.random() * 0.7)
+      group.add(tuft)
+    }
+    scene.add(group)
+    return group
+  }
+  createCartoonGrass()
+
   // --- 雪人 ---
   const snowmen = []
 
