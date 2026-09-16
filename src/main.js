@@ -719,6 +719,17 @@ function setupCartoon() {
       // 归一化：去掉 GLB 里 bake 的原场景位移，让树回到原点
       template.traverse(node => {
         if (node.parent === template) node.position.set(0, 0, 0)
+        if (node.isMesh) {
+          node.castShadow = true
+          node.receiveShadow = true
+          // 转成无光照材质，让贴图/颜色直接显示（卡通场景紫色灯光会洗掉颜色）
+          const m = node.material
+          if (m && m.map) {
+            node.material = new THREE.MeshBasicMaterial({ map: m.map, side: m.side })
+          } else if (m && m.color) {
+            node.material = new THREE.MeshBasicMaterial({ color: m.color, side: m.side })
+          }
+        }
       })
       template.updateMatrixWorld(true)
       const box = new THREE.Box3().setFromObject(template)
@@ -732,7 +743,6 @@ function setupCartoon() {
         tree.scale.setScalar(s)
         tree.rotation.y = Math.random() * Math.PI * 2
         tree.position.set(x, -bottomY * s, z)
-        tree.traverse(c=>{ if(c.isMesh){ c.castShadow = true; c.receiveShadow = true } })
         scene.add(tree)
         trees.push(tree)
       })
