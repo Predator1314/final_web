@@ -1001,33 +1001,33 @@ function setupCartoon() {
   scene.add(glowSphere)
 
   // ========== 卡通草地 ==========
-  const grassBladeGeo = new THREE.PlaneGeometry(0.13, 0.5)
-  grassBladeGeo.translate(0, 0.25, 0)  // 叶片根部在 y=0
-  const grassMatA = new THREE.MeshToonMaterial({ color: 0x7cc24a, emissive: 0x1d3d0c, emissiveIntensity: 0.12, side: THREE.DoubleSide })
-  const grassMatB = new THREE.MeshToonMaterial({ color: 0x4f9c34, emissive: 0x1d3d0c, emissiveIntensity: 0.12, side: THREE.DoubleSide })
+  const grassConeGeo = new THREE.ConeGeometry(0.12, 0.55, 6)
+  grassConeGeo.translate(0, 0.275, 0)  // 锥底贴地
+  const grassMatA = new THREE.MeshToonMaterial({ color: 0x6fbf4a, emissive: 0x1d3d0c, emissiveIntensity: 0.1 })
+  const grassMatB = new THREE.MeshToonMaterial({ color: 0x4f9c34, emissive: 0x1d3d0c, emissiveIntensity: 0.1 })
   function createCartoonGrass() {
     const group = new THREE.Group()
-    const tuftCount = 70
+    const tuftCount = 32
     for (let i = 0; i < tuftCount; i++) {
       const tuft = new THREE.Group()
-      const blades = 4 + Math.floor(Math.random() * 4)
-      const mat = Math.random() > 0.45 ? grassMatA : grassMatB
+      const blades = 3 + Math.floor(Math.random() * 3)
+      const mat = Math.random() > 0.5 ? grassMatA : grassMatB
       for (let j = 0; j < blades; j++) {
-        const blade = new THREE.Mesh(grassBladeGeo, mat)
-        blade.rotation.y = (j / blades) * Math.PI * 2 + Math.random() * 0.5
-        blade.rotation.x = 0.22 + Math.random() * 0.3
-        blade.scale.setScalar(0.7 + Math.random() * 0.9)
+        const blade = new THREE.Mesh(grassConeGeo, mat)
+        const ang = (j / blades) * Math.PI * 2 + Math.random() * 0.5
+        blade.position.set(Math.cos(ang) * 0.1, 0, Math.sin(ang) * 0.1)
+        blade.rotation.z = Math.cos(ang) * 0.18
+        blade.rotation.x = -Math.sin(ang) * 0.18
         blade.receiveShadow = true
         tuft.add(blade)
       }
       let x, z
       do {
-        x = (Math.random() - 0.5) * 21
-        z = (Math.random() - 0.5) * 21
+        x = (Math.random() - 0.5) * 20
+        z = (Math.random() - 0.5) * 20
       } while (Math.abs(x) < 4 && Math.abs(z) < 4)  // 避开中心雪人
-      tuft.position.set(x, 0.06, z)
-      tuft.rotation.y = Math.random() * Math.PI * 2
-      tuft.scale.setScalar(0.75 + Math.random() * 0.7)
+      tuft.position.set(x, 0.04, z)
+      tuft.scale.setScalar(0.7 + Math.random() * 0.6)
       group.add(tuft)
     }
     scene.add(group)
