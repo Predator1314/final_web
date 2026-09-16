@@ -22,6 +22,90 @@ app.appendChild(renderer.domElement)
 // 共享模式状态
 const state = { mode: 'real' }
 
+function createDreamyStars(count, bounds) {
+  const positions = new Float32Array(count * 3)
+  const sizes = new Float32Array(count)
+  const phases = new Float32Array(count)
+  const colors = new Float32Array(count * 3)
+  const palette = [
+    new THREE.Color(0xdbe9ff),
+    new THREE.Color(0xffffff),
+    new THREE.Color(0xb9d7ff),
+    new THREE.Color(0xffe7bf),
+  ]
+
+  for (let i = 0; i < count; i++) {
+    if (bounds.spherical) {
+      const azimuth = Math.random() * Math.PI * 2
+      const elevation = bounds.elevation[0] + Math.random() * (bounds.elevation[1] - bounds.elevation[0])
+      const radius = bounds.radius[0] + Math.random() * (bounds.radius[1] - bounds.radius[0])
+      const horizontalRadius = Math.cos(elevation) * radius
+      positions[i * 3] = bounds.center[0] + Math.cos(azimuth) * horizontalRadius
+      positions[i * 3 + 1] = bounds.center[1] + Math.sin(elevation) * radius
+      positions[i * 3 + 2] = bounds.center[2] + Math.sin(azimuth) * horizontalRadius
+    } else {
+      positions[i * 3] = bounds.x[0] + Math.random() * (bounds.x[1] - bounds.x[0])
+      positions[i * 3 + 1] = bounds.y[0] + Math.random() * (bounds.y[1] - bounds.y[0])
+      positions[i * 3 + 2] = bounds.z[0] + Math.random() * (bounds.z[1] - bounds.z[0])
+    }
+    sizes[i] = 0.7 + Math.random() * 1.8
+    phases[i] = Math.random() * Math.PI * 2
+    const color = palette[Math.floor(Math.random() * palette.length)]
+    colors[i * 3] = color.r
+    colors[i * 3 + 1] = color.g
+    colors[i * 3 + 2] = color.b
+  }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1))
+  geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1))
+  geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3))
+
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uTime: { value: 0 },
+      uOpacity: { value: 0 },
+    },
+    vertexShader: `
+      attribute float aSize;
+      attribute float aPhase;
+      attribute vec3 aColor;
+      uniform float uTime;
+      varying float vTwinkle;
+      varying vec3 vColor;
+      void main() {
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        float wave = 0.5 + 0.5 * sin(uTime * (0.8 + fract(aPhase) * 0.9) + aPhase);
+        vTwinkle = 0.62 + wave * 0.38;
+        vColor = aColor;
+        gl_PointSize = clamp(aSize * (235.0 / max(1.0, -mvPosition.z)), 1.0, 5.8);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform float uOpacity;
+      varying float vTwinkle;
+      varying vec3 vColor;
+      void main() {
+        float distanceToCenter = distance(gl_PointCoord, vec2(0.5));
+        float halo = smoothstep(0.5, 0.05, distanceToCenter);
+        float core = smoothstep(0.2, 0.0, distanceToCenter);
+        float alpha = (halo * 0.82 + core * 0.68) * vTwinkle * uOpacity;
+        if (alpha < 0.01) discard;
+        gl_FragColor = vec4(vColor * (1.0 + core * 1.65), alpha);
+      }
+    `,
+  })
+
+  const stars = new THREE.Points(geometry, material)
+  stars.frustumCulled = false
+  return stars
+}
+
 // ========== 现实版场景（当前样式，天空加了一点蓝） ==========
 function setupReal() {
   const scene = new THREE.Scene()
@@ -124,21 +208,13 @@ function setupReal() {
   skyMesh.frustumCulled = false
   scene.add(skyMesh)
 
-  // 夜晚星空：远处的细小冷白星点，不参与场景深度遮挡。
-  const starCount = 420
-  const starPositions = new Float32Array(starCount * 3)
-  for (let i = 0; i < starCount; i++) {
-    const angle = Math.random() * Math.PI * 2
-    const height = 0.12 + Math.random() * 0.82
-    const radius = 170
-    starPositions[i * 3] = Math.cos(angle) * radius * (0.7 + Math.random() * 0.3)
-    starPositions[i * 3 + 1] = height * radius
-    starPositions[i * 3 + 2] = -Math.abs(Math.sin(angle) * radius) - 35
-  }
-  const starGeometry = new THREE.BufferGeometry()
-  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
-  const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xdbe8ff, size: 0.7, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: false }))
-  stars.frustumCulled = false
+  // 夜晚星空：多色、分层闪烁的粒子星点，不参与场景深度遮挡。
+  const stars = createDreamyStars(2200, {
+    spherical: true,
+    center: [0, -2, -20],
+    radius: [135, 190],
+    elevation: [0.2, 1.35],
+  })
   scene.add(stars)
 
   // ========== 雪地（程序化生成：亮白雪堆起伏 + 微闪 + 法线） ==========
@@ -249,8 +325,19 @@ function setupReal() {
         const m=gltf.scene; m.position.set(x,-3,z); m.scale.setScalar(0.5+Math.random()*2)
         m.rotation.y=Math.random()*Math.PI*2
         m.traverse(c=>{if(c.isMesh){c.castShadow=true;c.receiveShadow=true}})
-        const _tint = new THREE.Color(treeTint)
-        m.traverse(c=>{if(c.isMesh&&c.material&&c.material.color)c.material.color.copy(_tint)})
+        m.traverse(c=>{
+          if (!c.isMesh || !c.material) return
+          if (c.material.color) {
+            c.userData.baseTreeColor = c.material.color.clone()
+            c.material.color.copy(c.userData.baseTreeColor).lerp(new THREE.Color(treeTint), treeTintStrength)
+          }
+          if (c.material.emissive) {
+            c.userData.baseTreeEmissive = c.material.emissive.clone()
+            c.userData.baseTreeEmissiveIntensity = c.material.emissiveIntensity || 0
+            c.material.emissive.set(0x000000)
+            c.material.emissiveIntensity = 0
+          }
+        })
         scene.add(m); treeGroup.push(m)
         if(gltf.animations&&gltf.animations.length){const mx=new THREE.AnimationMixer(m);const ta=mx.clipAction(gltf.animations[0]);ta.play();if(!window.treeMixers)window.treeMixers=[];window.treeMixers.push(mx);if(!window.treeActions)window.treeActions=[];window.treeActions.push(ta)}
       })
@@ -421,7 +508,8 @@ function setupReal() {
   function update(dt, frame){
     updateSnow(dt)
     // 星空闪烁，下雪时星星变淡
-    stars.material.opacity = starBaseOpacity * (weatherOn ? 0.15 : 1) * (0.82 + 0.18 * Math.sin(frame * 0.02))
+    stars.material.uniforms.uTime.value = frame * 0.018
+    stars.material.uniforms.uOpacity.value = starBaseOpacity * (weatherOn ? 0.15 : 1)
     if(weatherOn){ wind = 2.5 } else { wind = Math.max(0, wind - dt*0.6) }
     if(window.treeMixers)window.treeMixers.forEach(m=>m.update(dt))
     if(window.grassMixers)window.grassMixers.forEach(m=>m.update(dt))
@@ -462,13 +550,22 @@ function setupReal() {
   const timeNames = ['白天', '黄昏', '夜晚']
   let timeIndex = 0
   let starBaseOpacity = 0
-  let treeTint = 0xffffff
-  function tintTrees(hex){
+  let treeTint = 0xffd9e8
+  let treeTintStrength = 0.7
+  function tintTrees(hex, strength = 0){
     treeTint = hex
+    treeTintStrength = strength
     const c = new THREE.Color(hex)
     treeGroup.forEach(tree => {
       tree.traverse(node => {
-        if (node.isMesh && node.material && node.material.color) node.material.color.copy(c)
+        if (node.isMesh && node.material && node.material.color) {
+          const base = node.userData.baseTreeColor || node.material.color
+          node.material.color.copy(base).lerp(c, strength)
+          if (node.material.emissive) {
+            node.material.emissive.set(0x000000)
+            node.material.emissiveIntensity = 0
+          }
+        }
       })
     })
   }
@@ -487,7 +584,8 @@ function setupReal() {
       snowGround.material.color.set(0xffffff)
       skyMat.uniforms.uCloudTint.value.set(0xf5f8ff); skyMat.uniforms.uCloudStrength.value = 0.12
       starBaseOpacity = 0
-      tintTrees(0xffffff)
+      tintTrees(0xffd9e8, 0.7)
+      bloom.threshold = 0.85
       bloom.strength = 0.08
     } else if (timeIndex === 1) {
       skyMat.uniforms.uZenith.value.set(0x53628f)
@@ -502,8 +600,10 @@ function setupReal() {
       snowGround.material.color.set(0xffe0bd)
       skyMat.uniforms.uCloudTint.value.set(0xffdfbd); skyMat.uniforms.uCloudStrength.value = 0.2
       starBaseOpacity = 0.05
-      tintTrees(0xffc9a8)
+      tintTrees(0xffe2d4ce, 0.38)
+      bloom.threshold = 0.85
       bloom.strength = 0.2
+      bloom.radius = 0.1
     } else {
       skyMat.uniforms.uZenith.value.set(0x090d2f)
       skyMat.uniforms.uMid.value.set(0x202a68)
@@ -512,13 +612,15 @@ function setupReal() {
       skySunDir.set(-0.65, 0.18, -0.75).normalize()
       sun.position.set(-100, 10, -110)
       sun.color.set(0x8395ff); sun.intensity = 0.18
-      ambient.color.set(0x4e5ca5); ambient.intensity = 0.2
-      hemisphere.color.set(0x5969b5); hemisphere.groundColor.set(0x101329); hemisphere.intensity = 0.16
+      ambient.color.set(0x5c70a8); ambient.intensity = 0.21
+      hemisphere.color.set(0x6d80bd); hemisphere.groundColor.set(0x101426); hemisphere.intensity = 0.16
       snowGround.material.color.set(0x7890c0)
       skyMat.uniforms.uCloudTint.value.set(0x747da7); skyMat.uniforms.uCloudStrength.value = 0.08
-      starBaseOpacity = 0.95
-      tintTrees(0x9fb0e0)
-      bloom.strength = 0.2
+      starBaseOpacity = 1.28
+      tintTrees(0xaab6d0, 0.34)
+      bloom.threshold = 0.72
+      bloom.strength = 0.42
+      bloom.radius = 0.24
     }
     return timeNames[timeIndex]
   }
@@ -707,17 +809,12 @@ function setupCartoon() {
   createCartoonClouds()
 
   // ========== 夜晚星空 ==========
-  const cartoonStarCount = 260
-  const cartoonStarPositions = new Float32Array(cartoonStarCount * 3)
-  for (let i = 0; i < cartoonStarCount; i++) {
-    cartoonStarPositions[i * 3] = (Math.random() - 0.5) * 70
-    cartoonStarPositions[i * 3 + 1] = 5 + Math.random() * 28
-    cartoonStarPositions[i * 3 + 2] = -18 - Math.random() * 35
-  }
-  const cartoonStarGeometry = new THREE.BufferGeometry()
-  cartoonStarGeometry.setAttribute('position', new THREE.BufferAttribute(cartoonStarPositions, 3))
-  const cartoonStars = new THREE.Points(cartoonStarGeometry, new THREE.PointsMaterial({ color: 0xfff4d0, size: 0.22, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: true }))
-  cartoonStars.frustumCulled = false
+  const cartoonStars = createDreamyStars(1100, {
+    spherical: true,
+    center: [0, 4, -18],
+    radius: [65, 105],
+    elevation: [0.18, 1.4],
+  })
   scene.add(cartoonStars)
 
   // ========== 清透冰面 ==========
@@ -1141,6 +1238,8 @@ function setupCartoon() {
   })
 
   function update(t) {
+    cartoonStars.material.uniforms.uTime.value = t
+
     // 白云漂浮
     cartoonClouds.forEach(cloud => {
       cloud.position.x = cloud.userData.baseX + Math.sin(t * cloud.userData.speed + cloud.userData.phase) * 1.8
@@ -1219,7 +1318,7 @@ function setupCartoon() {
       cartoonSunGlowMaterial.color.set(0xffe7a0); cartoonSunGlowMaterial.opacity = 0.08
       cartoonCloudLight.color.set(0xffffff); cartoonCloudShade.color.set(0xd9effa); cartoonCloudLight.opacity = 0.88; cartoonCloudShade.opacity = 0.72
       iceMaterial.color.set(0xffffff); underIceMaterial.color.set(0xeaf7ff); sparkleMaterial.emissive.set(0xffffff); sparkleMaterial.emissiveIntensity = 0.7
-      cartoonStars.material.opacity = 0
+      cartoonStars.material.uniforms.uOpacity.value = 0
     } else if (timeIndex === 1) {
       scene.background.set(0xf0a27b)
       scene.fog.color.set(0xf8c38b); scene.fog.density = 0.006
@@ -1236,7 +1335,7 @@ function setupCartoon() {
       cartoonSunGlowMaterial.color.set(0xff8148); cartoonSunGlowMaterial.opacity = 0.2
       cartoonCloudLight.color.set(0xffd8bd); cartoonCloudShade.color.set(0x87536c); cartoonCloudLight.opacity = 0.75; cartoonCloudShade.opacity = 0.6
       iceMaterial.color.set(0xffdfbd); underIceMaterial.color.set(0xdd9e91); sparkleMaterial.emissive.set(0xffcda0); sparkleMaterial.emissiveIntensity = 0.45
-      cartoonStars.material.opacity = 0.08
+      cartoonStars.material.uniforms.uOpacity.value = 0.08
     } else {
       scene.background.set(0x11143f)
       scene.fog.color.set(0x242452); scene.fog.density = 0.011
@@ -1253,7 +1352,7 @@ function setupCartoon() {
       cartoonSunGlowMaterial.color.set(0x4f5fb8); cartoonSunGlowMaterial.opacity = 0.05
       cartoonCloudLight.color.set(0x59628e); cartoonCloudShade.color.set(0x292d55); cartoonCloudLight.opacity = 0.3; cartoonCloudShade.opacity = 0.22
       iceMaterial.color.set(0x8095ca); underIceMaterial.color.set(0x4b5a91); sparkleMaterial.emissive.set(0x8da8ff); sparkleMaterial.emissiveIntensity = 0.75
-      cartoonStars.material.opacity = 1
+      cartoonStars.material.uniforms.uOpacity.value = 1
     }
     if (timeIndex !== 2) {
       const sunHeight = timeIndex === 0 ? 10 : 2.2
