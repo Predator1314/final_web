@@ -447,9 +447,9 @@ function setupCartoon() {
   sunLight.position.set(-8, 10, 6)
   scene.add(sunLight)
 
-  // 白色方向光：给 GLB 树正确的颜色和立体阴影
+  // 白色方向光（太阳在左后方）：给 GLB 树正确的颜色和立体阴影
   const treeLight = new THREE.DirectionalLight(0xffffff, 1.3)
-  treeLight.position.set(6, 12, 8)
+  treeLight.position.set(-8, 12, -8)
   treeLight.castShadow = true
   treeLight.shadow.mapSize.set(2048, 2048)
   treeLight.shadow.camera.near = 1
@@ -783,13 +783,16 @@ function setupCartoon() {
       const targetH = 4.5  // 目标树高
 
       treePositions.forEach(([x, z]) => {
+        const pivot = new THREE.Group()
+        pivot.position.set(x, 0, z)  // 树根（地面）为原点
+        pivot.rotation.y = Math.random() * Math.PI * 2
         const tree = template.clone()
         const s = (targetH / h) * (0.8 + Math.random() * 0.4)
         tree.scale.setScalar(s)
-        tree.rotation.y = Math.random() * Math.PI * 2
-        tree.position.set(x, -bottomY * s, z)
-        scene.add(tree)
-        trees.push(tree)
+        tree.position.y = -bottomY * s  // 树整体上移，让树根对齐 pivot 原点
+        pivot.add(tree)
+        scene.add(pivot)
+        trees.push(pivot)
       })
     })
   }
