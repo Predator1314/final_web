@@ -714,6 +714,34 @@ function setupCartoon() {
   const trees = []
 
   function loadTrees(){
+    // 树干贴图（原木纹）
+    const trunkTex = new THREE.TextureLoader().load(base + 'textures/trunk.jpg')
+    trunkTex.colorSpace = THREE.SRGBColorSpace
+
+    // 树叶贴图（手绘纹理，染成粉色，保留纹理明暗细节）
+    const leafCanvas = document.createElement('canvas')
+    const leafTex = new THREE.CanvasTexture(leafCanvas)
+    leafTex.colorSpace = THREE.SRGBColorSpace
+    const leafImg = new Image()
+    leafImg.src = base + 'textures/leaves.jpg'
+    leafImg.onload = () => {
+      leafCanvas.width = leafImg.width
+      leafCanvas.height = leafImg.height
+      const ctx = leafCanvas.getContext('2d')
+      ctx.drawImage(leafImg, 0, 0)
+      const id = ctx.getImageData(0, 0, leafCanvas.width, leafCanvas.height)
+      const d = id.data
+      const pr = 255, pg = 141, pb = 161  // 粉色 0xff8da1
+      for (let i = 0; i < d.length; i += 4) {
+        const lum = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) / 255
+        d[i] = pr * lum
+        d[i + 1] = pg * lum
+        d[i + 2] = pb * lum
+      }
+      ctx.putImageData(id, 0, 0)
+      leafTex.needsUpdate = true
+    }
+
     new GLTFLoader().load(base + 'models/flower_tree.glb', gltf=>{
       const template = gltf.scene
       // 归一化：去掉 GLB 里 bake 的原场景位移，让树回到原点
@@ -722,14 +750,13 @@ function setupCartoon() {
         if (node.isMesh) {
           node.castShadow = true
           node.receiveShadow = true
-          // GLB 贴图偏暗，直接用纯色：树干棕、树叶绿、平面橙
           const m = node.material
-          let color = null
-          if (m && m.name === '4.wood') color = 0x7a5230
-          else if (m && m.name === 'bush') color = 0x4d8c3a
-          else if (m && m.color) color = m.color.getHex()
-          if (color !== null) {
-            node.material = new THREE.MeshBasicMaterial({ color, side: m ? m.side : THREE.FrontSide })
+          if (m && m.name === '4.wood') {
+            node.material = new THREE.MeshBasicMaterial({ map: trunkTex, side: m.side })
+          } else if (m && m.name === 'bush') {
+            node.material = new THREE.MeshBasicMaterial({ map: leafTex, side: m.side })
+          } else if (m && m.color) {
+            node.material = new THREE.MeshBasicMaterial({ color: m.color, side: m.side })
           }
         }
       })
