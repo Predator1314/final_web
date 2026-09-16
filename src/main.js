@@ -704,68 +704,7 @@ function setupCartoon() {
   }
 
   // ========== 粉红色树木 ==========
-  function createPinkTree(x, z) {
-    const group = new THREE.Group()
-    const scale = 1.8 + Math.random() * 0.6
-
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.2 * scale, 0.3 * scale, 0.8 * scale, 8),
-      new THREE.MeshToonMaterial({ color: 0x5a3d2b })
-    )
-    trunk.position.y = 0.4 * scale
-    trunk.castShadow = true
-    trunk.receiveShadow = true
-    group.add(trunk)
-
-    const pinkColors = [0xff8da1, 0xffaab8, 0xffb7c5, 0xff6b81, 0xff9eb5]
-
-    const crownMat1 = new THREE.MeshToonMaterial({
-      color: pinkColors[Math.floor(Math.random() * pinkColors.length)],
-      emissive: 0x552233,
-      emissiveIntensity: 0.08
-    })
-    const crown1 = new THREE.Mesh(new THREE.ConeGeometry(0.9 * scale, 0.7 * scale, 8), crownMat1)
-    crown1.position.y = 0.9 * scale
-    crown1.castShadow = true
-    crown1.receiveShadow = true
-    group.add(crown1)
-
-    const crownMat2 = new THREE.MeshToonMaterial({
-      color: pinkColors[Math.floor(Math.random() * pinkColors.length)],
-      emissive: 0x552233,
-      emissiveIntensity: 0.06
-    })
-    const crown2 = new THREE.Mesh(new THREE.ConeGeometry(0.7 * scale, 0.6 * scale, 8), crownMat2)
-    crown2.position.y = 1.4 * scale
-    crown2.castShadow = true
-    crown2.receiveShadow = true
-    group.add(crown2)
-
-    const crownMat3 = new THREE.MeshToonMaterial({
-      color: pinkColors[Math.floor(Math.random() * pinkColors.length)],
-      emissive: 0x552233,
-      emissiveIntensity: 0.05
-    })
-    const crown3 = new THREE.Mesh(new THREE.ConeGeometry(0.5 * scale, 0.5 * scale, 8), crownMat3)
-    crown3.position.y = 1.9 * scale
-    crown3.castShadow = true
-    crown3.receiveShadow = true
-    group.add(crown3)
-
-    if (Math.random() > 0.5) {
-      const snowCap = new THREE.Mesh(
-        new THREE.ConeGeometry(0.15 * scale, 0.1 * scale, 6),
-        new THREE.MeshToonMaterial({ color: 0xf5faff, transparent: true, opacity: 0.6 })
-      )
-      snowCap.position.y = 2.2 * scale
-      group.add(snowCap)
-    }
-
-    group.rotation.y = Math.random() * Math.PI * 2
-    group.position.set(x, 0, z)
-    return group
-  }
-
+  // ========== 树（从 GLB 加载） ==========
   const treePositions = [
     [-7, -7], [9, -6], [-6, 8], [8, 7], [-9, 4], [10, 2],
     [-4.5, -4.5], [5.5, -4], [-3.5, 5.5], [5, 5], [-6, 2.5], [6.5, -4.5],
@@ -774,11 +713,32 @@ function setupCartoon() {
 
   const trees = []
 
-  treePositions.forEach(([x, z]) => {
-    const tree = createPinkTree(x, z)
-    trees.push(tree)
-    scene.add(tree)
-  })
+  function loadTrees(){
+    new GLTFLoader().load(base + 'models/flower_tree.glb', gltf=>{
+      const template = gltf.scene
+      // 归一化：去掉 GLB 里 bake 的原场景位移，让树回到原点
+      template.traverse(node => {
+        if (node.parent === template) node.position.set(0, 0, 0)
+      })
+      template.updateMatrixWorld(true)
+      const box = new THREE.Box3().setFromObject(template)
+      const bottomY = box.min.y
+      const h = box.max.y - box.min.y
+      const targetH = 4.5  // 目标树高
+
+      treePositions.forEach(([x, z]) => {
+        const tree = template.clone()
+        const s = (targetH / h) * (0.8 + Math.random() * 0.4)
+        tree.scale.setScalar(s)
+        tree.rotation.y = Math.random() * Math.PI * 2
+        tree.position.set(x, -bottomY * s, z)
+        tree.traverse(c=>{ if(c.isMesh){ c.castShadow = true; c.receiveShadow = true } })
+        scene.add(tree)
+        trees.push(tree)
+      })
+    })
+  }
+  loadTrees()
 
   // ========== 粉色花瓣飘落 ==========
   const petalCanvas = document.createElement('canvas')
