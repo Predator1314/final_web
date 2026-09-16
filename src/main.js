@@ -448,6 +448,11 @@ function setupCartoon() {
   sunLight.castShadow = true
   scene.add(sunLight)
 
+  // 白色方向光：给 GLB 树正确的颜色和立体阴影
+  const treeLight = new THREE.DirectionalLight(0xffffff, 1.3)
+  treeLight.position.set(6, 12, 8)
+  scene.add(treeLight)
+
   const backLight = new THREE.DirectionalLight(0xb888cc, 0.6)
   backLight.position.set(6, 4, -8)
   scene.add(backLight)
@@ -755,11 +760,11 @@ function setupCartoon() {
           node.receiveShadow = true
           const m = node.material
           if (m && m.name === '4.wood') {
-            node.material = new THREE.MeshBasicMaterial({ map: trunkTex, side: m.side })
+            node.material = new THREE.MeshLambertMaterial({ map: trunkTex, side: m.side })
           } else if (m && m.name === 'bush') {
-            node.material = new THREE.MeshBasicMaterial({ map: leafTex, side: m.side })
+            node.material = new THREE.MeshLambertMaterial({ map: leafTex, side: m.side })
           } else if (m && m.color) {
-            node.material = new THREE.MeshBasicMaterial({ color: m.color, side: m.side })
+            node.material = new THREE.MeshLambertMaterial({ color: m.color, side: m.side })
           }
         }
       })
