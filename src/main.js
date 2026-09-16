@@ -722,12 +722,14 @@ function setupCartoon() {
         if (node.isMesh) {
           node.castShadow = true
           node.receiveShadow = true
-          // 转成无光照材质，让贴图/颜色直接显示（卡通场景紫色灯光会洗掉颜色）
+          // GLB 贴图偏暗，直接用纯色：树干棕、树叶绿、平面橙
           const m = node.material
-          if (m && m.map) {
-            node.material = new THREE.MeshBasicMaterial({ map: m.map, side: m.side })
-          } else if (m && m.color) {
-            node.material = new THREE.MeshBasicMaterial({ color: m.color, side: m.side })
+          let color = null
+          if (m && m.name === '4.wood') color = 0x7a5230
+          else if (m && m.name === 'bush') color = 0x4d8c3a
+          else if (m && m.color) color = m.color.getHex()
+          if (color !== null) {
+            node.material = new THREE.MeshBasicMaterial({ color, side: m ? m.side : THREE.FrontSide })
           }
         }
       })
