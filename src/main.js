@@ -622,9 +622,9 @@ function setupReal() {
 function setupCartoon() {
   const scene = new THREE.Scene()
 
-  // 粉紫黄昏天空
-  scene.background = new THREE.Color(0x6a4a8c)
-  scene.fog = new THREE.FogExp2(0xffb58a, 0.008)
+  // 白天天空（默认明亮，避免发黑）
+  scene.background = new THREE.Color(0x8fd2f5)
+  scene.fog = new THREE.FogExp2(0xdff3ff, 0.006)
 
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000)
   camera.position.set(12, 6, 18)
