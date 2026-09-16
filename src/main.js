@@ -1000,24 +1000,25 @@ function setupCartoon() {
   glowSphere.position.copy(sunMesh.position)
   scene.add(glowSphere)
 
-  // ========== 卡通草地 ==========
-  const grassConeGeo = new THREE.ConeGeometry(0.12, 0.55, 6)
-  grassConeGeo.translate(0, 0.275, 0)  // 锥底贴地
+  // ========== 卡通草地（三叶草丛） ==========
+  const grassConeGeo = new THREE.ConeGeometry(0.13, 0.6, 5)
+  grassConeGeo.translate(0, 0.3, 0)  // 锥底贴地
   const grassMatA = new THREE.MeshToonMaterial({ color: 0x6fbf4a, emissive: 0x1d3d0c, emissiveIntensity: 0.1 })
   const grassMatB = new THREE.MeshToonMaterial({ color: 0x4f9c34, emissive: 0x1d3d0c, emissiveIntensity: 0.1 })
   function createCartoonGrass() {
     const group = new THREE.Group()
-    const tuftCount = 32
+    const tuftCount = 28
     for (let i = 0; i < tuftCount; i++) {
       const tuft = new THREE.Group()
-      const blades = 3 + Math.floor(Math.random() * 3)
       const mat = Math.random() > 0.5 ? grassMatA : grassMatB
-      for (let j = 0; j < blades; j++) {
+      const baseAngle = Math.random() * Math.PI * 2
+      for (let j = 0; j < 3; j++) {  // 每簇三片叶
         const blade = new THREE.Mesh(grassConeGeo, mat)
-        const ang = (j / blades) * Math.PI * 2 + Math.random() * 0.5
-        blade.position.set(Math.cos(ang) * 0.1, 0, Math.sin(ang) * 0.1)
-        blade.rotation.z = Math.cos(ang) * 0.18
-        blade.rotation.x = -Math.sin(ang) * 0.18
+        const ang = baseAngle + (j / 3) * Math.PI * 2  // 均匀 120°
+        blade.position.set(Math.cos(ang) * 0.09, 0, Math.sin(ang) * 0.09)
+        blade.rotation.z = Math.cos(ang) * 0.24
+        blade.rotation.x = -Math.sin(ang) * 0.24
+        blade.scale.y = 0.85 + Math.random() * 0.4  // 高低错落
         blade.receiveShadow = true
         tuft.add(blade)
       }
