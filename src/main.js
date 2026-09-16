@@ -714,33 +714,36 @@ function setupCartoon() {
   const trees = []
 
   function loadTrees(){
-    // 树干贴图（原木纹）
-    const trunkTex = new THREE.TextureLoader().load(base + 'textures/trunk.jpg')
-    trunkTex.colorSpace = THREE.SRGBColorSpace
-
-    // 树叶贴图（手绘纹理，染成粉色，保留纹理明暗细节）
-    const leafCanvas = document.createElement('canvas')
-    const leafTex = new THREE.CanvasTexture(leafCanvas)
-    leafTex.colorSpace = THREE.SRGBColorSpace
-    const leafImg = new Image()
-    leafImg.src = base + 'textures/leaves.jpg'
-    leafImg.onload = () => {
-      leafCanvas.width = leafImg.width
-      leafCanvas.height = leafImg.height
-      const ctx = leafCanvas.getContext('2d')
-      ctx.drawImage(leafImg, 0, 0)
-      const id = ctx.getImageData(0, 0, leafCanvas.width, leafCanvas.height)
-      const d = id.data
-      const pr = 255, pg = 141, pb = 161  // 粉色 0xff8da1
-      for (let i = 0; i < d.length; i += 4) {
-        const lum = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) / 255
-        d[i] = pr * lum
-        d[i + 1] = pg * lum
-        d[i + 2] = pb * lum
+    // 贴图是「黑底白线」的手绘/木纹，反转成「彩底深线」再上色
+    function tintImage(url, r, g, b, cb){
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width
+        canvas.height = img.height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+        const id = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const d = id.data
+        for (let i = 0; i < d.length; i += 4) {
+          const lum = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) / 255
+          const shade = 1 - lum  // 反转：线条变深、背景上色
+          d[i] = r * shade
+          d[i + 1] = g * shade
+          d[i + 2] = b * shade
+        }
+        ctx.putImageData(id, 0, 0)
+        cb(canvas)
       }
-      ctx.putImageData(id, 0, 0)
-      leafTex.needsUpdate = true
+      img.src = url
     }
+
+    const trunkTex = new THREE.CanvasTexture(document.createElement('canvas'))
+    trunkTex.colorSpace = THREE.SRGBColorSpace
+    const leafTex = new THREE.CanvasTexture(document.createElement('canvas'))
+    leafTex.colorSpace = THREE.SRGBColorSpace
+    tintImage(base + 'textures/trunk.jpg', 122, 82, 48, c => { trunkTex.image = c; trunkTex.needsUpdate = true })
+    tintImage(base + 'textures/leaves.jpg', 255, 141, 161, c => { leafTex.image = c; leafTex.needsUpdate = true })
 
     new GLTFLoader().load(base + 'models/flower_tree.glb', gltf=>{
       const template = gltf.scene
