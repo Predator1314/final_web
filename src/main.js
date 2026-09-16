@@ -38,25 +38,31 @@ function setupReal() {
 
   // ========== 光照 ==========
   const sun = new THREE.DirectionalLight(0xffffff, 0.9)
-  sun.position.set(100, 40, -60); sun.castShadow = true
+  sun.position.set(100, 85, -60); sun.castShadow = true
   sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.near=0.5; sun.shadow.camera.far=200
-  sun.shadow.camera.left=-80; sun.shadow.camera.right=80; sun.shadow.camera.top=80; sun.shadow.camera.bottom=-80
+  sun.shadow.camera.left=-140; sun.shadow.camera.right=140; sun.shadow.camera.top=140; sun.shadow.camera.bottom=-140
+  sun.shadow.bias = -0.00015; sun.shadow.normalBias = 0.025
   scene.add(sun)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.4))
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8890a8, 0.25))
+  const ambient = new THREE.AmbientLight(0xffffff, 0.4)
+  const hemisphere = new THREE.HemisphereLight(0xffffff, 0x8890a8, 0.25)
+  scene.add(ambient)
+  scene.add(hemisphere)
 
   // ========== 天空（真实感大气渐变 + 太阳光晕，单次着色器绘制） ==========
   const skyGeo = new THREE.SphereGeometry(200, 64, 32)
-  const skySunDir = new THREE.Vector3(0, 20, -140).normalize()
+  const skySunDir = new THREE.Vector3(0, 0.65, -1).normalize()
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      uZenith: { value: new THREE.Color(0x1e5aa8) },   // 天顶深蓝
-      uMid:    { value: new THREE.Color(0x7fb2e0) },   // 中段浅蓝
-      uHorizon:{ value: new THREE.Color(0xd4e3f2) },   // 地平线浅蓝白（自然）
+      uZenith: { value: new THREE.Color(0x164b91) },   // 天顶深蓝
+      uMid:    { value: new THREE.Color(0x6fa9dc) },   // 中段天空蓝
+      uHorizon:{ value: new THREE.Color(0xe7eef5) },   // 地平线雾白
       uSunDir: { value: skySunDir },
       uOff:    { value: 26.0 },
+      uSunStrength: { value: 1.0 },
+      uCloudTint: { value: new THREE.Color(0xf5f8ff) },
+      uCloudStrength: { value: 0.12 },
     },
     vertexShader: `
       varying vec3 vW;
@@ -68,23 +74,48 @@ function setupReal() {
     `,
     fragmentShader: `
       uniform vec3 uZenith, uMid, uHorizon, uSunDir;
-      uniform float uOff;
+      uniform float uOff, uSunStrength, uCloudStrength;
+      uniform vec3 uCloudTint;
       varying vec3 vW;
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+      float fbm(vec2 p) {
+        float value = 0.0, amplitude = 0.5;
+        for (int i = 0; i < 5; i++) {
+          value += noise(p) * amplitude;
+          p = p * 2.03 + vec2(17.2, 9.4);
+          amplitude *= 0.5;
+        }
+        return value;
+      }
       void main(){
         vec3 w = normalize(vW + vec3(0.0, uOff, 0.0));
         float h = clamp(w.y, 0.0, 1.0);
-        // 大气散射式三段渐变：地平线暖白 -> 中段浅蓝 -> 天顶深蓝
-        float t = pow(h, 0.6);
+        // 用高度和视线角模拟真实天空的瑞利散射层次。
+        float t = pow(h, 0.55);
         vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.4, t));
         col = mix(col, uZenith, smoothstep(0.4, 1.0, t));
-        // 地平线附近淡淡的暖色大气光晕
-        col += uHorizon * pow(1.0 - h, 3.0) * 0.18;
-        // 太阳：小亮核 + 柔和内晕 + 外晕
+        // 地平线的空气透视会变亮，并带一点暖色散射。
+        col += vec3(1.0, 0.93, 0.82) * pow(1.0 - h, 4.0) * 0.08;
+        // 高空薄云：拉伸的低对比度纹理，只改变天空颜色，不制造体积云。
+        vec2 cloudUv = vec2(w.x * 3.6 + w.z * 1.4, w.z * 0.9 - w.x * 0.5);
+        float cloudNoise = fbm(cloudUv + vec2(h * 2.0, h * 0.7));
+        float cloudBand = smoothstep(0.12, 0.28, h) * (1.0 - smoothstep(0.72, 0.9, h));
+        float cloudShape = smoothstep(0.53, 0.72, cloudNoise) * cloudBand;
+        col = mix(col, uCloudTint, cloudShape * uCloudStrength);
+        // 太阳：亮核、内晕和较宽的柔和外晕。
         float sun = max(dot(w, uSunDir), 0.0);
-        float disc = smoothstep(0.9992, 0.9995, sun);
-        col += vec3(1.0, 0.97, 0.90) * disc * 1.5;
-        col += vec3(1.0, 0.86, 0.62) * pow(sun, 12.0) * 0.35;
-        col += vec3(1.0, 0.75, 0.50) * pow(sun, 4.0)  * 0.16;
+        float disc = smoothstep(0.997, 0.9994, sun);
+        col += vec3(1.0, 0.98, 0.92) * disc * 1.35 * uSunStrength;
+        col += vec3(1.0, 0.88, 0.68) * pow(sun, 18.0) * 0.24 * uSunStrength;
+        col += vec3(1.0, 0.78, 0.56) * pow(sun, 5.0)  * 0.10 * uSunStrength;
+        col += vec3(1.0, 0.58, 0.32) * pow(sun, 2.2) * 0.035 * uSunStrength;
         gl_FragColor = vec4(col, 1.0);
       }
     `,
@@ -92,6 +123,23 @@ function setupReal() {
   const skyMesh = new THREE.Mesh(skyGeo, skyMat)
   skyMesh.frustumCulled = false
   scene.add(skyMesh)
+
+  // 夜晚星空：远处的细小冷白星点，不参与场景深度遮挡。
+  const starCount = 420
+  const starPositions = new Float32Array(starCount * 3)
+  for (let i = 0; i < starCount; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const height = 0.12 + Math.random() * 0.82
+    const radius = 170
+    starPositions[i * 3] = Math.cos(angle) * radius * (0.7 + Math.random() * 0.3)
+    starPositions[i * 3 + 1] = height * radius
+    starPositions[i * 3 + 2] = -Math.abs(Math.sin(angle) * radius) - 35
+  }
+  const starGeometry = new THREE.BufferGeometry()
+  starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
+  const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xdbe8ff, size: 0.7, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: false }))
+  stars.frustumCulled = false
+  scene.add(stars)
 
   // ========== 雪地（程序化生成：亮白雪堆起伏 + 微闪 + 法线） ==========
   function makeSnowGround() {
@@ -242,7 +290,7 @@ function setupReal() {
     snowPos[i*3]   = (Math.random() - 0.5) * 140
     snowPos[i*3+1] = Math.random() * 45
     snowPos[i*3+2] = (Math.random() - 0.5) * 140
-    snowSpd[i] = 0.04 + Math.random() * 0.08
+    snowSpd[i] = 0.055 + Math.random() * 0.10
   }
   snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3))
 
@@ -257,8 +305,8 @@ function setupReal() {
   sctx.fillRect(0, 0, 32, 32)
 
   const snowPoints = new THREE.Points(snowGeo, new THREE.PointsMaterial({
-    color: 0xffffff, size: 0.4, map: new THREE.CanvasTexture(snowCanvas),
-    transparent: true, opacity: 0.85, depthWrite: false, sizeAttenuation: true
+    color: 0xffffff, size: 0.52, map: new THREE.CanvasTexture(snowCanvas),
+    transparent: true, opacity: 0.95, depthWrite: false, sizeAttenuation: true
   }))
   snowPoints.frustumCulled = false
   scene.add(snowPoints)
@@ -365,30 +413,11 @@ function setupReal() {
     renderer.domElement.style.cursor=hit?'pointer':'grab'
   })
 
-  // ========== 雲層 ==========
-  const cloudList=[]
-  const cMat=new THREE.MeshStandardMaterial({color:0xf0e8e0,transparent:true,opacity:.5,roughness:1})
-  const cdMat=new THREE.MeshStandardMaterial({color:0xe0d0c0,transparent:true,opacity:.3,roughness:1})
-  function createClouds(){
-    for(let i=0;i<12;i++){
-      const g=new THREE.Group()
-      for(let j=0;j<6+Math.floor(Math.random()*8);j++){
-        const c=new THREE.Mesh(new THREE.BoxGeometry(1+Math.random()*2,.6+Math.random()*1,1+Math.random()*2),Math.random()>.6?cdMat:cMat)
-        c.position.set((Math.random()-.5)*5,(Math.random()-.5)*2,(Math.random()-.5)*5)
-        g.add(c)
-      }
-      g.position.set((Math.random()-.5)*160,20+Math.random()*30,-70-Math.random()*60)
-      g.userData={bx:g.position.x,sp:.001+Math.random()*.003,rn:4+Math.random()*8}
-      scene.add(g); cloudList.push(g)
-    }
-  }
-  function updateClouds(t){cloudList.forEach(c=>{c.position.x=c.userData.bx+Math.sin(t*.015*c.userData.sp)*c.userData.rn})}
-
   // ========== 初始化 ==========
-  loadTrees(); loadGrass(); createSnowmen(); createClouds()
+  loadTrees(); loadGrass(); createSnowmen()
 
   function update(dt, frame){
-    updateSnow(dt); updateClouds(frame)
+    updateSnow(dt)
     if(weatherOn){ wind = 2.5 } else { wind = Math.max(0, wind - dt*0.6) }
     if(window.treeMixers)window.treeMixers.forEach(m=>m.update(dt))
     if(window.grassMixers)window.grassMixers.forEach(m=>m.update(dt))
@@ -417,7 +446,7 @@ function setupReal() {
   function toggleWeather(){
     weatherOn = !weatherOn
     if(weatherOn){
-      snowTarget = 900
+      snowTarget = 1650
       wind = 2.5
     } else {
       snowTarget = 0
@@ -426,7 +455,57 @@ function setupReal() {
     snowmen.forEach(s=>s.userData.target=s.userData.base*(weatherOn?1.06:1))
   }
 
-  return { camera, target, update, render, resize, toggleWeather, gust }
+  const timeNames = ['白天', '黄昏', '夜晚']
+  let timeIndex = 0
+  function setTime(next = (timeIndex + 1) % timeNames.length) {
+    timeIndex = next
+    if (timeIndex === 0) {
+      skyMat.uniforms.uZenith.value.set(0x164b91)
+      skyMat.uniforms.uMid.value.set(0x6fa9dc)
+      skyMat.uniforms.uHorizon.value.set(0xe7eef5)
+      skyMat.uniforms.uSunStrength.value = 1
+      skySunDir.set(0, 0.65, -1).normalize()
+      sun.position.set(100, 85, -60)
+      sun.color.set(0xffffff); sun.intensity = 0.9
+      ambient.color.set(0xffffff); ambient.intensity = 0.4
+      hemisphere.color.set(0xffffff); hemisphere.groundColor.set(0x8890a8); hemisphere.intensity = 0.25
+      snowGround.material.color.set(0xffffff)
+      skyMat.uniforms.uCloudTint.value.set(0xf5f8ff); skyMat.uniforms.uCloudStrength.value = 0.12
+      stars.material.opacity = 0
+      bloom.strength = 0.08
+    } else if (timeIndex === 1) {
+      skyMat.uniforms.uZenith.value.set(0x53628f)
+      skyMat.uniforms.uMid.value.set(0xd18778)
+      skyMat.uniforms.uHorizon.value.set(0xffc47a)
+      skyMat.uniforms.uSunStrength.value = 1.35
+      skySunDir.set(-0.65, 0.14, -0.75).normalize()
+      sun.position.set(-100, 38, -110)
+      sun.color.set(0xffbc78); sun.intensity = 1.18
+      ambient.color.set(0xf0b08e); ambient.intensity = 0.3
+      hemisphere.color.set(0xffd09b); hemisphere.groundColor.set(0x635068); hemisphere.intensity = 0.24
+      snowGround.material.color.set(0xffe0bd)
+      skyMat.uniforms.uCloudTint.value.set(0xffdfbd); skyMat.uniforms.uCloudStrength.value = 0.2
+      stars.material.opacity = 0.05
+      bloom.strength = 0.2
+    } else {
+      skyMat.uniforms.uZenith.value.set(0x090d2f)
+      skyMat.uniforms.uMid.value.set(0x202a68)
+      skyMat.uniforms.uHorizon.value.set(0x4e4c78)
+      skyMat.uniforms.uSunStrength.value = 0
+      skySunDir.set(-0.65, 0.18, -0.75).normalize()
+      sun.position.set(-100, 10, -110)
+      sun.color.set(0x8395ff); sun.intensity = 0.18
+      ambient.color.set(0x4e5ca5); ambient.intensity = 0.2
+      hemisphere.color.set(0x5969b5); hemisphere.groundColor.set(0x101329); hemisphere.intensity = 0.16
+      snowGround.material.color.set(0x7890c0)
+      skyMat.uniforms.uCloudTint.value.set(0x747da7); skyMat.uniforms.uCloudStrength.value = 0.08
+      stars.material.opacity = 0.95
+      bloom.strength = 0.2
+    }
+    return timeNames[timeIndex]
+  }
+
+  return { camera, target, update, render, resize, toggleWeather, gust, setTime, getTime: () => timeNames[timeIndex] }
 }
 
 // ========== 卡通版场景 ==========
@@ -1000,42 +1079,6 @@ function setupCartoon() {
   glowSphere.position.copy(sunMesh.position)
   scene.add(glowSphere)
 
-  // ========== 卡通草地（三叶草丛） ==========
-  const grassConeGeo = new THREE.ConeGeometry(0.13, 0.6, 5)
-  grassConeGeo.translate(0, 0.3, 0)  // 锥底贴地
-  const grassMatA = new THREE.MeshToonMaterial({ color: 0x6fbf4a, emissive: 0x1d3d0c, emissiveIntensity: 0.1 })
-  const grassMatB = new THREE.MeshToonMaterial({ color: 0x4f9c34, emissive: 0x1d3d0c, emissiveIntensity: 0.1 })
-  function createCartoonGrass() {
-    const group = new THREE.Group()
-    const tuftCount = 28
-    for (let i = 0; i < tuftCount; i++) {
-      const tuft = new THREE.Group()
-      const mat = Math.random() > 0.5 ? grassMatA : grassMatB
-      const baseAngle = Math.random() * Math.PI * 2
-      for (let j = 0; j < 3; j++) {  // 每簇三片叶
-        const blade = new THREE.Mesh(grassConeGeo, mat)
-        const ang = baseAngle + (j / 3) * Math.PI * 2  // 均匀 120°
-        blade.position.set(Math.cos(ang) * 0.09, 0, Math.sin(ang) * 0.09)
-        blade.rotation.z = Math.cos(ang) * 0.24
-        blade.rotation.x = -Math.sin(ang) * 0.24
-        blade.scale.y = 0.85 + Math.random() * 0.4  // 高低错落
-        blade.receiveShadow = true
-        tuft.add(blade)
-      }
-      let x, z
-      do {
-        x = (Math.random() - 0.5) * 20
-        z = (Math.random() - 0.5) * 20
-      } while (Math.abs(x) < 4 && Math.abs(z) < 4)  // 避开中心雪人
-      tuft.position.set(x, 0.04, z)
-      tuft.scale.setScalar(0.7 + Math.random() * 0.6)
-      group.add(tuft)
-    }
-    scene.add(group)
-    return group
-  }
-  createCartoonGrass()
-
   // --- 雪人 ---
   const snowmen = []
 
@@ -1282,15 +1325,14 @@ const timeBtn = makeActionBtn('🕒 时间：白天', '#536aa8', '82px')
 
 weatherBtn.addEventListener('click', ()=>{ if(mode==='real') real.toggleWeather() })
 timeBtn.addEventListener('click', () => {
-  if (mode !== 'cartoon') return
-  const nextTime = cartoon.setTime()
+  const activeScene = mode === 'real' ? real : cartoon
+  const nextTime = activeScene.setTime()
   timeBtn.textContent = `🕒 时间：${nextTime}`
 })
-timeBtn.style.display = 'none'
 
 // 交互提示（底部居中，9 秒后淡出）
 const hintEl = document.createElement('div')
-hintEl.textContent = '🌨️ 点「天气」按钮：开启/关闭风雪（点雪人也可切换）'
+hintEl.textContent = '🌨️ 点「天气」开启风雪　·　🕒 点「时间」切换白天/黄昏/夜晚'
 hintEl.style.position = 'fixed'
 hintEl.style.left = '50%'
 hintEl.style.bottom = '28px'
@@ -1318,7 +1360,6 @@ toggleBtn.addEventListener('click', () => {
     renderer.toneMappingExposure = 1.0
     cartoon.windButton.style.display = 'block'
     realBtns.forEach(b => b.style.display = 'none')
-    timeBtn.style.display = 'block'
     timeBtn.textContent = `🕒 时间：${cartoon.getTime()}`
   } else {
     mode = 'real'
@@ -1326,7 +1367,7 @@ toggleBtn.addEventListener('click', () => {
     renderer.toneMappingExposure = 1.0
     cartoon.windButton.style.display = 'none'
     realBtns.forEach(b => b.style.display = 'block')
-    timeBtn.style.display = 'none'
+    timeBtn.textContent = `🕒 时间：${real.getTime()}`
   }
   applyControls(mode)
   state.mode = mode
