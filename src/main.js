@@ -445,12 +445,20 @@ function setupCartoon() {
   // 灯光：粉紫黄昏氛围
   const sunLight = new THREE.DirectionalLight(0xffc49a, 1.2)
   sunLight.position.set(-8, 10, 6)
-  sunLight.castShadow = true
   scene.add(sunLight)
 
   // 白色方向光：给 GLB 树正确的颜色和立体阴影
   const treeLight = new THREE.DirectionalLight(0xffffff, 1.3)
   treeLight.position.set(6, 12, 8)
+  treeLight.castShadow = true
+  treeLight.shadow.mapSize.set(2048, 2048)
+  treeLight.shadow.camera.near = 1
+  treeLight.shadow.camera.far = 60
+  treeLight.shadow.camera.left = -20
+  treeLight.shadow.camera.right = 20
+  treeLight.shadow.camera.top = 20
+  treeLight.shadow.camera.bottom = -20
+  treeLight.shadow.bias = -0.0005
   scene.add(treeLight)
 
   const backLight = new THREE.DirectionalLight(0xb888cc, 0.6)
