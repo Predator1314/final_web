@@ -249,6 +249,8 @@ function setupReal() {
         const m=gltf.scene; m.position.set(x,-3,z); m.scale.setScalar(0.5+Math.random()*2)
         m.rotation.y=Math.random()*Math.PI*2
         m.traverse(c=>{if(c.isMesh){c.castShadow=true;c.receiveShadow=true}})
+        const _tint = new THREE.Color(treeTint)
+        m.traverse(c=>{if(c.isMesh&&c.material&&c.material.color)c.material.color.copy(_tint)})
         scene.add(m); treeGroup.push(m)
         if(gltf.animations&&gltf.animations.length){const mx=new THREE.AnimationMixer(m);const ta=mx.clipAction(gltf.animations[0]);ta.play();if(!window.treeMixers)window.treeMixers=[];window.treeMixers.push(mx);if(!window.treeActions)window.treeActions=[];window.treeActions.push(ta)}
       })
@@ -418,6 +420,8 @@ function setupReal() {
 
   function update(dt, frame){
     updateSnow(dt)
+    // 星空闪烁，下雪时星星变淡
+    stars.material.opacity = starBaseOpacity * (weatherOn ? 0.15 : 1) * (0.82 + 0.18 * Math.sin(frame * 0.02))
     if(weatherOn){ wind = 2.5 } else { wind = Math.max(0, wind - dt*0.6) }
     if(window.treeMixers)window.treeMixers.forEach(m=>m.update(dt))
     if(window.grassMixers)window.grassMixers.forEach(m=>m.update(dt))
@@ -457,6 +461,17 @@ function setupReal() {
 
   const timeNames = ['白天', '黄昏', '夜晚']
   let timeIndex = 0
+  let starBaseOpacity = 0
+  let treeTint = 0xffffff
+  function tintTrees(hex){
+    treeTint = hex
+    const c = new THREE.Color(hex)
+    treeGroup.forEach(tree => {
+      tree.traverse(node => {
+        if (node.isMesh && node.material && node.material.color) node.material.color.copy(c)
+      })
+    })
+  }
   function setTime(next = (timeIndex + 1) % timeNames.length) {
     timeIndex = next
     if (timeIndex === 0) {
@@ -471,7 +486,8 @@ function setupReal() {
       hemisphere.color.set(0xffffff); hemisphere.groundColor.set(0x8890a8); hemisphere.intensity = 0.25
       snowGround.material.color.set(0xffffff)
       skyMat.uniforms.uCloudTint.value.set(0xf5f8ff); skyMat.uniforms.uCloudStrength.value = 0.12
-      stars.material.opacity = 0
+      starBaseOpacity = 0
+      tintTrees(0xffffff)
       bloom.strength = 0.08
     } else if (timeIndex === 1) {
       skyMat.uniforms.uZenith.value.set(0x53628f)
@@ -485,7 +501,8 @@ function setupReal() {
       hemisphere.color.set(0xffd09b); hemisphere.groundColor.set(0x635068); hemisphere.intensity = 0.24
       snowGround.material.color.set(0xffe0bd)
       skyMat.uniforms.uCloudTint.value.set(0xffdfbd); skyMat.uniforms.uCloudStrength.value = 0.2
-      stars.material.opacity = 0.05
+      starBaseOpacity = 0.05
+      tintTrees(0xffc9a8)
       bloom.strength = 0.2
     } else {
       skyMat.uniforms.uZenith.value.set(0x090d2f)
@@ -499,7 +516,8 @@ function setupReal() {
       hemisphere.color.set(0x5969b5); hemisphere.groundColor.set(0x101329); hemisphere.intensity = 0.16
       snowGround.material.color.set(0x7890c0)
       skyMat.uniforms.uCloudTint.value.set(0x747da7); skyMat.uniforms.uCloudStrength.value = 0.08
-      stars.material.opacity = 0.95
+      starBaseOpacity = 0.95
+      tintTrees(0x9fb0e0)
       bloom.strength = 0.2
     }
     return timeNames[timeIndex]
